@@ -76,140 +76,6 @@ function xsl_formatter_field_formatter_info() {
   return $info;
 }
 
-/**
- * Implements hook_field_formatter_settings_summary().
- *
- * Summarizes the settings for display on the UI.
- */
-function xsl_formatter_field_formatter_settings_summary($field, $instance, $view_mode) {
-  $display = $instance['display'][$view_mode];
-  $settings = $display['settings'];
-  return t('XSL process, using : @xsl_filename', array('@xsl_filename' => basename($settings['xsl_path'])));
-}
-
-/**
- * Implements hook_field_formatter_settings_form().
- *
- * Settings for the display options.
- */
-function xsl_formatter_field_formatter_settings_form($field, $instance, $view_mode, $form, &$form_state) {
-  $display = $instance['display'][$view_mode];
-  $settings = $display['settings'];
-
-  // Originally text, try a drop-down instead
-  /*
-  $element['xsl_path'] = array(
-    '#title' => t('XSL path'),
-    '#type' => 'textfield',
-    '#default_value' => $settings['xsl_path'],
-    '#element_validate' => array('xsl_formatter_xsl_path_validate'),
-    '#description' => t("Path to the location of the XSL file. Search will be made relative to the module directory, the site directory and the file directory. eg <code>xsl/xmlverbatimwrapper.xsl</code>, <code>xsl/prettyprint.xsl</code>"),
-    '#autocomplete_path' => 'admin/xsl_path'
-  );
-  */
-  $xsls = xsl_formatter_enumerate_xsls();
-  $element['xsl_path'] = array(
-    '#title' => t('XSL path'),
-    '#type' => 'select',
-    '#default_value' => $settings['xsl_path'],
-    '#element_validate' => array('xsl_formatter_xsl_path_validate'),
-    '#description' => t("Path to the location of the XSL file. Search will be made relative to the files/xsl directory, then the module directory."),
-    '#options' => $xsls,
-  );
-
-  // file upload needs an explicit name. This is horrid sorry
-  $upload_field_id = 'files[' . drupal_clean_css_identifier("files[fields][{$instance['field_name']}][settings_edit_form][settings][xsl_upload]") . ']';
-  $element['xsl_upload'] = array(
-    '#type' => 'file',
-    '#title' => t('Upload XSL file'),
-    '#maxlength' => 40,
-    '#description' => t("This will be placed in your files/xsl folder where it can be found and re-used."),
-    '#element_validate' => array('xsl_formatter_xsl_upload_validate'),
-    '#name' => $upload_field_id,
-  );
-  $module_path = drupal_get_path('module', 'xsl_formatter');
-  $element['xsl_params'] = array(
-    '#title' => t('Additional params'),
-    '#type' => 'textarea',
-    '#rows' => 2,
-    '#cols' => 24,
-    '#description' => t("Additional parameters that the Transformation stylesheet may expect. Use JSON format, eg <pre>{\"indent-elements\":true, \"css-stylesheet\":\"$module_path/xsl/xmlverbatim.css\"}</pre>"),
-    '#default_value' => $settings['xsl_params'],
-    '#element_validate' => array('xsl_formatter_xsl_params_validate'),
-  );
-  $element['debug'] = array(
-    '#title' => t('Show XML parsing warnings'),
-    '#type' => 'checkbox',
-    '#description' => t("Bad XML data input will trigger warnings that may show on screen. Disable this for a public site."),
-    '#default_value' => $settings['debug'],
-  );
-  return $element;
-}
-
-/**
- * Ensure the named path exists. This includes a small search lookup.
- */
-function xsl_formatter_xsl_path_validate($element, &$form_state, $form) {
-  try {
-    $xsl_doc = xsl_formatter_get_xml_doc($element['#value']);
-  } catch (Exception $e) {
-    $element_id = join('][', $element['#parents']);
-    form_set_error($element_id, $e->getMessage());
-  }
-}
-
-/**
- * Ensure the params are valid. Checks that the JSON parses into something.
- */
-function xsl_formatter_xsl_params_validate($element, &$form_state, $form) {
-  // json_decode doesn't throw many parse errors, so look at the results.
-  $value = trim($element['#value']);
-  $params = json_decode($value);
-  if (!empty($value) && $params == NULL) {
-    // This means some sort of failure
-    $element_id = join('][', $element['#parents']);
-    form_set_error($element_id, 'Failed to parse the JSON. Check your syntax. You must quote all strings with double-quotes.');
-  }
-}
-
-/**
- * If we upload our own xsl, Make sure it gets saved.
- *
- * Place it in the public xsl foilder and refer to it.
- */
-function xsl_formatter_xsl_upload_validate($element, &$form_state, $form) {
-  // Check for a new uploaded xsl.
-  // Figure out what the big ID was. This is wierd.
-  $upload_field_id = 'files-' . substr($element['#id'], strlen('edit-'));
-
-  // Get it. Temporary at first.
-  $validators = array('file_validate_extensions' => array('xsl','xslt'));
-  $file = file_save_upload($upload_field_id, $validators);
-
-  if (!empty($file)) {
-    // File upload was attempted.
-    if ($file) {
-      $save_dir  = "public://xsl";
-      file_prepare_directory($save_dir, FILE_CREATE_DIRECTORY);
-      $save_filepath = $save_dir . '/' . $file->filename;
-      $filename = file_unmanaged_copy($file->uri, $save_filepath, FILE_EXISTS_REPLACE);
-
-      // Set xsl_path to the newly uploaded value.
-      // The #parents array is important.
-      // Find the nearby xsl_path element with the same ancestry as me.
-      $parents = $element['#parents'];
-      array_pop($parents);
-      array_push($parents, 'xsl_path');
-      $xsl_path_element = array('#parents' => $parents);
-      form_set_value($xsl_path_element, $save_filepath, $form_state);
-    }
-    else {
-      // File upload failed.
-      form_set_error('xsl_upload', t('The xsl could not be uploaded.'));
-    }
-  }
-}
-
 
 /**
  * Theme function for 'xsl_formatter' which can run on (various) field formatters.
@@ -266,16 +132,8 @@ function xsl_formatter_field_formatter_view($entity_type, $entity, $field, $inst
     }
 
     try {
-      // Tricky to catch errors.
-      // Do this to toggle debug mode.
-      if (!@empty($display['settings']['debug'])) {
-        // Warnings may go to the screen.
-        $xml_doc->loadXML($data);
-      }
-      else {
-        // Suppress warnings.
-        @$xml_doc->loadXML($data);
-      }
+      // Warnings may go to the screen.
+      $xml_doc->loadXML($data);
     } catch (Exception $e) {
       throw new Exception("Unable to parse the data. Probably invalid XML. " . $e->getMessage(), E_USER_ERROR);
     }
