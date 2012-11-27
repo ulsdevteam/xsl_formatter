@@ -49,7 +49,7 @@
  * We can do similar things to local textareas, remote URLs, or uploaded files!
  */
 function xsl_formatter_field_formatter_info() {
-  return array(
+  $info = array(
     'xsl' => array(
       'label' => t('Transformed by XSL'),
       'field types' => array('text', 'link', 'filefield'),
@@ -61,7 +61,19 @@ function xsl_formatter_field_formatter_info() {
     ),
   );
 
+  foreach (xsl_formatter_enumerate_xsls() as $xsl_path => $label) {
+    $info[$label] = array(
+      'label' => t('Transformed by XSL ' . $label),
+      'field types' => array('text', 'link', 'filefield'),
+      'settings' => array(
+        'xsl_path' => 'xsl/xmlverbatim.xsl',
+        'xsl_params' => '',
+        'debug' => FALSE,
+      ),
+    );
+  }
 
+  return $info;
 }
 
 /**
@@ -214,7 +226,14 @@ function theme_xsl_formatter_formatter_xsl($element) {
   $instance = NULL;
   $langcode = NULL;
   $items = array($element['#item']);
-  $display = array('settings' => array('xsl_path' => 'xsl/prettyprint.xsl', 'xsl_params' => ''));;
+  $display = array('settings' => array('xsl_path' => 'xsl/prettyprint.xsl', 'xsl_params' => ''));
+  // Based on the formatter ID we were given, set the xsl_path
+  if (! empty($element['#formatter'])) {
+    $xsls = array_flip(xsl_formatter_enumerate_xsls());
+    if (!empty($xsls[$element['#formatter']])) {
+      $display['settings']['xsl_path'] = $xsls[$element['#formatter']];
+    }
+  }
   $renderable = xsl_formatter_field_formatter_view($entity_type, $entity, $field, $instance, $langcode, $items, $display);
   return drupal_render($renderable);
 }
@@ -298,7 +317,7 @@ function xsl_formatter_field_formatter_view($entity_type, $entity, $field, $inst
  * Advertises our theme functions.
  */
 function xsl_formatter_theme() {
-  return array(
+  $theme = array(
     'xsl_formatter_formatter_xsl' => array(
       'arguments' => array(
         'item' => NULL,
@@ -314,6 +333,14 @@ function xsl_formatter_theme() {
       ),
     ),
   );
+  // Support infinite settings, same way imagecache did
+  foreach (xsl_formatter_enumerate_xsls() as $xsl_path => $label) {
+    $theme['xsl_formatter_formatter_' . $label] = array(
+      'arguments' => array('element' => NULL),
+      'function' => 'theme_xsl_formatter_formatter_xsl',
+    );
+  }
+  return $theme;
 }
 
 /**
@@ -345,20 +372,48 @@ function xsl_formatter_enumerate_xsls() {
     $label = $base;
 
     // Just me being cute here...
-    if (file_uri_scheme($base) == 'module') {
-      $target_path = file_uri_target($base);
+    $target_path = xsl_formatter_file_uri_target($base);
+    if (xsl_formatter_file_uri_scheme($base) == 'module') {
       $split_path = explode('/', $target_path);
       $module_name = array_shift($split_path);
       $base = drupal_get_path('module' , $module_name) .'/'. join('/', $split_path);
     }
+    if (xsl_formatter_file_uri_scheme($base) == 'public') {
+      $base = file_directory_path() . '/'. $target_path;
+    }
 
-    $files = file_scan_directory($base, '/.*\.xsl[t]?/');
+    $files = file_scan_directory($base, '\.xsl$');
     foreach ($files as $file) {
-      $found[$file->uri] = $label .'/'. $file->filename;
+      // Need a really flattened basename for a style ID...
+      $found[$file->filename] = $id = preg_replace('/[^a-zA-Z0-9]+/', '_', $file->basename);
     }
   }
   return $found;
 }
+
+/**
+ * Returns the schema part of a URI.
+ *
+ * backport from D7
+ */
+function xsl_formatter_file_uri_scheme($uri) {
+  $position = strpos($uri, '://');
+  return $position ? substr($uri, 0, $position) : FALSE;
+}
+
+/**
+ * Returns the part of a URI after the schema.
+ *
+ * backport from D7
+ */
+function xsl_formatter_file_uri_target($uri) {
+  $data = explode('://', $uri, 2);
+
+  // Remove erroneous leading or trailing, forward-slashes and backslashes.
+  return count($data) == 2 ? trim($data[1], '\/') : FALSE;
+}
+
+
 
 /////////////////////////
 // XML utilities below.
