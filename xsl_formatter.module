@@ -50,9 +50,9 @@
  */
 function xsl_formatter_field_formatter_info() {
   return array(
-    'xsl_formatter' => array(
+    'xsl' => array(
       'label' => t('Transformed by XSL'),
-      'field types' => array('text_long', 'link_field', 'file'),
+      'field types' => array('text', 'link', 'filefield'),
       'settings' => array(
         'xsl_path' => 'xsl/xmlverbatim.xsl',
         'xsl_params' => '',
@@ -60,6 +60,8 @@ function xsl_formatter_field_formatter_info() {
       ),
     ),
   );
+
+
 }
 
 /**
@@ -198,6 +200,27 @@ function xsl_formatter_xsl_upload_validate($element, &$form_state, $form) {
 
 
 /**
+ * Theme function for 'xsl_formatter' which can run on (various) field formatters.
+ * theme_{modulename}_formatter_{format_style}()
+ *  @see xsl_formatter_field_formatter_info()
+ */
+function theme_xsl_formatter_formatter_xsl($element) {
+  // Backport this to a call to the D7 formatter_view func.
+  // Rather than rebuild all the logic, just call it. func sig is totally different though.
+  $entity_type = 'node';
+  $entity = $element['#node'];
+  $field_name = $element['#field_name'];
+  $field = content_fields($field_name, $entity->type);
+  $instance = NULL;
+  $langcode = NULL;
+  $items = array($element['#item']);
+  $display = array('settings' => array('xsl_path' => 'xsl/prettyprint.xsl', 'xsl_params' => ''));;
+  $renderable = xsl_formatter_field_formatter_view($entity_type, $entity, $field, $instance, $langcode, $items, $display);
+  return drupal_render($renderable);
+}
+
+
+/**
  * Implements hook_field_formatter_view().
  *
  * Does the process here, to generate the result.
@@ -214,21 +237,19 @@ function xsl_formatter_field_formatter_view($entity_type, $entity, $field, $inst
     // Alternate field types. Local data (valus) is easiest, but
     // If the field type is a link, go get that data now
     // DESPERATELY need caching or something here.
-    if ($field['type'] == 'link_field') {
+    if ($field['type'] == 'link') {
       $url = url($item['url'], $item);
       $data = file_get_contents($url);
     }
     // Or files, why not?
-    if ($field['type'] == 'file') {
-      dpm($item);
-#      $url = url($item['url'], $item);
-      $data = file_get_contents($item['uri']);
+    if ($field['type'] == 'filefield') {
+      $data = file_get_contents($item['filepath']);
     }
 
     try {
       // Tricky to catch errors.
       // Do this to toggle debug mode.
-      if (!empty($display['settings']['debug'])) {
+      if (!@empty($display['settings']['debug'])) {
         // Warnings may go to the screen.
         $xml_doc->loadXML($data);
       }
@@ -236,19 +257,28 @@ function xsl_formatter_field_formatter_view($entity_type, $entity, $field, $inst
         // Suppress warnings.
         @$xml_doc->loadXML($data);
       }
+    } catch (Exception $e) {
+      throw new Exception("Unable to parse the data. Probably invalid XML. " . $e->getMessage(), E_USER_ERROR);
+    }
 
-      // XML Loaded OK. Now load the stylesheet.
+    // XML Loaded OK. Now load the stylesheet.
+    try {
       $xsl_path = $display['settings']['xsl_path'];
       $xsl_doc = xsl_formatter_get_xml_doc($xsl_path);
-      // Pass through any params that the XSLT may want.
-      $params = (array)json_decode($display['settings']['xsl_params']);
-      // 'base' can be used for supporting relative css links.
-      $params['base'] = url(dirname($xsl_doc->documenturi));
-      // Transform!
-      $result = xsl_formatter_xmldoc_plus_xsldoc($xml_doc, $xsl_doc, $params);
+      if ($xsl_doc) {
+        // Pass through any params that the XSLT may want.
+        $params = (array)json_decode($display['settings']['xsl_params']);
+        // 'base' can be used for supporting relative css links.
+        $params['base'] = url(dirname($xsl_doc->documenturi));
+        // Transform!
+        $result = xsl_formatter_xmldoc_plus_xsldoc($xml_doc, $xsl_doc, $params);
+      }
+      else {
+        throw new Exception("Failed to load XSL. Probably invalid. $xsl_path " . $e->getMessage(), E_USER_ERROR);
+      }
     }
     catch (Exception $e) {
-      throw new Exception("Unable to parse the data. Probably invalid XML.", E_USER_ERROR);
+      throw new Exception("Unable to run the transformation. Probably invalid XSL. $xsl_path. " . $e->getMessage(), E_USER_ERROR);
     }
 
     $element[$delta] = array(
@@ -265,12 +295,19 @@ function xsl_formatter_field_formatter_view($entity_type, $entity, $field, $inst
 /**
  * Implements hook_theme().
  *
- * Advertises our theme function.
+ * Advertises our theme functions.
  */
 function xsl_formatter_theme() {
   return array(
+    'xsl_formatter_formatter_xsl' => array(
+      'arguments' => array(
+        'item' => NULL,
+        'settings' => NULL,
+        'result' => NULL,
+      ),
+    ),
     'xsl_formatter' => array(
-      'variables' => array(
+      'arguments' => array(
         'item' => NULL,
         'settings' => NULL,
         'result' => NULL,
@@ -293,7 +330,7 @@ function xsl_formatter_theme() {
 function theme_xsl_formatter($variables) {
   // The data is already cooked, just use this theme func to stick a
   // wrapper around it if you want.
-  return $variables['result'];
+  return @$variables['#result'];
 }
 
 /**
@@ -362,7 +399,7 @@ function xsl_formatter_get_xml_doc($xml_file, $description = "XML file") {
 
   $xml_filepath = $xml_file;
   if (!is_file($xml_filepath)) {
-    $xml_filepath = 'public://' . $xml_file;
+    $xml_filepath = file_directory_path() . '/' . $xml_file;
   }
   if (!is_file($xml_filepath)) {
     $xml_filepath = drupal_get_path('module', 'xsl_formatter') . "/$xml_file";
