@@ -65,6 +65,8 @@ Brought the external css into the head to avoid relative link issues.
 .xmlverb-pi-content       { color: #006666; font-style: italic }
 
             </style>
+            <style type="text/css" media="print">@import url("<xsl:value-of select="$base"/>/xmlverbatim.css");</style>
+            
          </head>
          <body class="xmlverb-default">
             <tt>

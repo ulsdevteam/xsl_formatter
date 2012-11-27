@@ -41,16 +41,18 @@
  * @version 2012-11-27 (1:00AM -3:30AM)
  */
 
+
 /**
  * Implements hook_field_formatter_info().
  *
- * Ceclares the existance of this formatter.
+ * Declares the existance of this formatter.
+ * We can do similar things to local textareas, remote URLs, or uploaded files!
  */
 function xsl_formatter_field_formatter_info() {
   return array(
     'xsl_formatter' => array(
       'label' => t('Transformed by XSL'),
-      'field types' => array('text_long', 'link_field'),
+      'field types' => array('text_long', 'link_field', 'file'),
       'settings' => array(
         'xsl_path' => 'xsl/xmlverbatim.xsl',
         'xsl_params' => '',
@@ -79,12 +81,37 @@ function xsl_formatter_field_formatter_settings_summary($field, $instance, $view
 function xsl_formatter_field_formatter_settings_form($field, $instance, $view_mode, $form, &$form_state) {
   $display = $instance['display'][$view_mode];
   $settings = $display['settings'];
+
+  // Originally text, try a drop-down instead
+  /*
   $element['xsl_path'] = array(
     '#title' => t('XSL path'),
     '#type' => 'textfield',
     '#default_value' => $settings['xsl_path'],
     '#element_validate' => array('xsl_formatter_xsl_path_validate'),
     '#description' => t("Path to the location of the XSL file. Search will be made relative to the module directory, the site directory and the file directory. eg <code>xsl/xmlverbatimwrapper.xsl</code>, <code>xsl/prettyprint.xsl</code>"),
+    '#autocomplete_path' => 'admin/xsl_path'
+  );
+  */
+  $xsls = xsl_formatter_enumerate_xsls();
+  $element['xsl_path'] = array(
+    '#title' => t('XSL path'),
+    '#type' => 'select',
+    '#default_value' => $settings['xsl_path'],
+    '#element_validate' => array('xsl_formatter_xsl_path_validate'),
+    '#description' => t("Path to the location of the XSL file. Search will be made relative to the files/xsl directory, then the module directory."),
+    '#options' => $xsls,
+  );
+
+  // file upload needs an explicit name. This is horrid sorry
+  $upload_field_id = 'files[' . drupal_clean_css_identifier("files[fields][{$instance['field_name']}][settings_edit_form][settings][xsl_upload]") . ']';
+  $element['xsl_upload'] = array(
+    '#type' => 'file',
+    '#title' => t('Upload XSL file'),
+    '#maxlength' => 40,
+    '#description' => t("This will be placed in your files/xsl folder where it can be found and re-used."),
+    '#element_validate' => array('xsl_formatter_xsl_upload_validate'),
+    '#name' => $upload_field_id,
   );
   $module_path = drupal_get_path('module', 'xsl_formatter');
   $element['xsl_params'] = array(
@@ -132,6 +159,45 @@ function xsl_formatter_xsl_params_validate($element, &$form_state, $form) {
 }
 
 /**
+ * If we upload our own xsl, Make sure it gets saved.
+ *
+ * Place it in the public xsl foilder and refer to it.
+ */
+function xsl_formatter_xsl_upload_validate($element, &$form_state, $form) {
+  // Check for a new uploaded xsl.
+  // Figure out what the big ID was. This is wierd.
+  $upload_field_id = 'files-' . substr($element['#id'], strlen('edit-'));
+
+  // Get it. Temporary at first.
+  $validators = array('file_validate_extensions' => array('xsl','xslt'));
+  $file = file_save_upload($upload_field_id, $validators);
+
+  if (!empty($file)) {
+    // File upload was attempted.
+    if ($file) {
+      $save_dir  = "public://xsl";
+      file_prepare_directory($save_dir, FILE_CREATE_DIRECTORY);
+      $save_filepath = $save_dir . '/' . $file->filename;
+      $filename = file_unmanaged_copy($file->uri, $save_filepath, FILE_EXISTS_REPLACE);
+
+      // Set xsl_path to the newly uploaded value.
+      // The #parents array is important.
+      // Find the nearby xsl_path element with the same ancestry as me.
+      $parents = $element['#parents'];
+      array_pop($parents);
+      array_push($parents, 'xsl_path');
+      $xsl_path_element = array('#parents' => $parents);
+      form_set_value($xsl_path_element, $save_filepath, $form_state);
+    }
+    else {
+      // File upload failed.
+      form_set_error('xsl_upload', t('The xsl could not be uploaded.'));
+    }
+  }
+}
+
+
+/**
  * Implements hook_field_formatter_view().
  *
  * Does the process here, to generate the result.
@@ -145,11 +211,18 @@ function xsl_formatter_field_formatter_view($entity_type, $entity, $field, $inst
     $data = @$item['value'];
     $xml_doc = new domdocument;
 
+    // Alternate field types. Local data (valus) is easiest, but
     // If the field type is a link, go get that data now
     // DESPERATELY need caching or something here.
     if ($field['type'] == 'link_field') {
       $url = url($item['url'], $item);
       $data = file_get_contents($url);
+    }
+    // Or files, why not?
+    if ($field['type'] == 'file') {
+      dpm($item);
+#      $url = url($item['url'], $item);
+      $data = file_get_contents($item['uri']);
     }
 
     try {
@@ -165,9 +238,12 @@ function xsl_formatter_field_formatter_view($entity_type, $entity, $field, $inst
       }
 
       // XML Loaded OK. Now load the stylesheet.
-      $xsl_doc = xsl_formatter_get_xml_doc($display['settings']['xsl_path']);
+      $xsl_path = $display['settings']['xsl_path'];
+      $xsl_doc = xsl_formatter_get_xml_doc($xsl_path);
       // Pass through any params that the XSLT may want.
-      $params = json_decode($display['settings']['xsl_params']);
+      $params = (array)json_decode($display['settings']['xsl_params']);
+      // 'base' can be used for supporting relative css links.
+      $params['base'] = url(dirname($xsl_doc->documenturi));
       // Transform!
       $result = xsl_formatter_xmldoc_plus_xsldoc($xml_doc, $xsl_doc, $params);
     }
@@ -220,6 +296,32 @@ function theme_xsl_formatter($variables) {
   return $variables['result'];
 }
 
+/**
+ * Return a list of xsl files, as found in the search locations
+ * Over-engineerd for now, anticipating 'module:// as a file scheme
+ * and keeping the UI simpler (?)
+ */
+function xsl_formatter_enumerate_xsls() {
+  $paths = array('public://xsl', 'module://xsl_formatter/xsl');
+  $found = array();
+  foreach ($paths as $base) {
+    $label = $base;
+
+    // Just me being cute here...
+    if (file_uri_scheme($base) == 'module') {
+      $target_path = file_uri_target($base);
+      $split_path = explode('/', $target_path);
+      $module_name = array_shift($split_path);
+      $base = drupal_get_path('module' , $module_name) .'/'. join('/', $split_path);
+    }
+
+    $files = file_scan_directory($base, '/.*\.xsl[t]?/');
+    foreach ($files as $file) {
+      $found[$file->uri] = $label .'/'. $file->filename;
+    }
+  }
+  return $found;
+}
 
 /////////////////////////
 // XML utilities below.
@@ -253,17 +355,17 @@ function xsl_formatter_get_xml_doc($xml_file, $description = "XML file") {
   }
 
   // Check if and where filepath can be found.
-  // Search first under full path, then module dir, then under files dir.
+  // Search first under full path, then under files dir, then module dir.
 
   # TODO - check if this could be used as an attack vector?
   # Sanitize the fetch path.
 
   $xml_filepath = $xml_file;
   if (!is_file($xml_filepath)) {
-    $xml_filepath = drupal_get_path('module', 'xsl_formatter') . "/$xml_file";
+    $xml_filepath = 'public://' . $xml_file;
   }
   if (!is_file($xml_filepath)) {
-    $xml_filepath = 'public://' . $xml_file;
+    $xml_filepath = drupal_get_path('module', 'xsl_formatter') . "/$xml_file";
   }
 
   if (is_file($xml_filepath)) {
