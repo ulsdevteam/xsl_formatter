@@ -241,7 +241,7 @@ function xsl_formatter_field_formatter_view($entity_type, $entity, $field, $inst
       $result = xsl_formatter_xmldoc_plus_xsldoc($xml_doc, $xsl_doc, $params);
     }
     catch (Exception $e) {
-      watchdog('xsl_formatter', "Unable to parse the XML data or transform it. Probably invalid XML.", array('%message' => $e->getMessage()), E_USER_ERROR);
+      watchdog('xsl_formatter', "Unable to parse the XML data or transform it. Probably invalid XML. %message", array('%message' => $e->getMessage()), WATCHDOG_ERROR);
     }
 
     $element[$delta] = array(
