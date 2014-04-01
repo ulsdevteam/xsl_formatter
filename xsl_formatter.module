@@ -1,6 +1,9 @@
 <?php
 /**
- * @file a formatter that runs given XML content through a defined
+ * @file
+ * A formatter for XML content.
+ *
+ * It runs given XML content (or URL content) through a defined
  * XSL stylesheet before rendering.
  *
  *  When enabled, this provides an additional field formatter available
@@ -24,9 +27,9 @@
  * Built with *some* comparison to
  *
  * http://drupal.org/project/cck_xslt D6 unreleased
- * - which  made its own field and data storage instead of re-using a text field.
+ * -which  made its own field and data storage instead of re-using a text field.
  * - Has the XSL selection a per-node choice, not a field formatter.
- * - did demonstrate how easy it was to extend to reading an URL instead of text.
+ * -did demonstrate how easy it was to extend to reading an URL instead of text.
  *
  * http://drupal.org/project/feeds_xsltparser D7 dev
  * - Not incredibly similar, but nice to see!
@@ -82,17 +85,6 @@ function xsl_formatter_field_formatter_settings_form($field, $instance, $view_mo
   $display = $instance['display'][$view_mode];
   $settings = $display['settings'];
 
-  // Originally text, try a drop-down instead
-  /*
-  $element['xsl_path'] = array(
-    '#title' => t('XSL path'),
-    '#type' => 'textfield',
-    '#default_value' => $settings['xsl_path'],
-    '#element_validate' => array('xsl_formatter_xsl_path_validate'),
-    '#description' => t("Path to the location of the XSL file. Search will be made relative to the module directory, the site directory and the file directory. eg <code>xsl/xmlverbatimwrapper.xsl</code>, <code>xsl/prettyprint.xsl</code>"),
-    '#autocomplete_path' => 'admin/xsl_path'
-  );
-  */
   $xsls = xsl_formatter_enumerate_xsls();
   $element['xsl_path'] = array(
     '#title' => t('XSL path'),
@@ -103,7 +95,7 @@ function xsl_formatter_field_formatter_settings_form($field, $instance, $view_mo
     '#options' => $xsls,
   );
 
-  // file upload needs an explicit name. This is horrid sorry
+  // Var file upload needs an explicit name. This is horrid sorry.
   $upload_field_id = 'files[' . drupal_clean_css_identifier("files[fields][{$instance['field_name']}][settings_edit_form][settings][xsl_upload]") . ']';
   $element['xsl_upload'] = array(
     '#type' => 'file',
@@ -119,7 +111,7 @@ function xsl_formatter_field_formatter_settings_form($field, $instance, $view_mo
     '#type' => 'textarea',
     '#rows' => 2,
     '#cols' => 24,
-    '#description' => t("Additional parameters that the Transformation stylesheet may expect. Use JSON format, eg <pre>{\"indent-elements\":true, \"css-stylesheet\":\"$module_path/xsl/xmlverbatim.css\"}</pre>"),
+    '#description' => t('Additional parameters that the Transformation stylesheet may expect. Use JSON format, eg <pre>{\"indent-elements\":true, \"css-stylesheet\":\"!module_path/xsl/xmlverbatim.css\"}</pre>', array('!module_path' => $module_path)),
     '#default_value' => $settings['xsl_params'],
     '#element_validate' => array('xsl_formatter_xsl_params_validate'),
   );
@@ -138,8 +130,9 @@ function xsl_formatter_field_formatter_settings_form($field, $instance, $view_mo
 function xsl_formatter_xsl_path_validate($element, &$form_state, $form) {
   try {
     $xsl_doc = xsl_formatter_get_xml_doc($element['#value']);
-  } catch (Exception $e) {
-    $element_id = join('][', $element['#parents']);
+  }
+  catch (Exception $e) {
+    $element_id = implode('][', $element['#parents']);
     form_set_error($element_id, $e->getMessage());
   }
 }
@@ -152,8 +145,8 @@ function xsl_formatter_xsl_params_validate($element, &$form_state, $form) {
   $value = trim($element['#value']);
   $params = json_decode($value);
   if (!empty($value) && $params == NULL) {
-    // This means some sort of failure
-    $element_id = join('][', $element['#parents']);
+    // This means some sort of failure.
+    $element_id = implode('][', $element['#parents']);
     form_set_error($element_id, 'Failed to parse the JSON. Check your syntax. You must quote all strings with double-quotes.');
   }
 }
@@ -169,7 +162,7 @@ function xsl_formatter_xsl_upload_validate($element, &$form_state, $form) {
   $upload_field_id = 'files-' . substr($element['#id'], strlen('edit-'));
 
   // Get it. Temporary at first.
-  $validators = array('file_validate_extensions' => array('xsl','xslt'));
+  $validators = array('file_validate_extensions' => array('xsl', 'xslt'));
   $file = file_save_upload($upload_field_id, $validators);
 
   if (!empty($file)) {
@@ -178,7 +171,7 @@ function xsl_formatter_xsl_upload_validate($element, &$form_state, $form) {
       $save_dir  = "public://xsl";
       file_prepare_directory($save_dir, FILE_CREATE_DIRECTORY);
       $save_filepath = $save_dir . '/' . $file->filename;
-      $filename = file_unmanaged_copy($file->uri, $save_filepath, FILE_EXISTS_REPLACE);
+      file_unmanaged_copy($file->uri, $save_filepath, FILE_EXISTS_REPLACE);
 
       // Set xsl_path to the newly uploaded value.
       // The #parents array is important.
@@ -209,7 +202,7 @@ function xsl_formatter_field_formatter_view($entity_type, $entity, $field, $inst
 
     $result = "Can't parse the XML input";
     $data = @$item['value'];
-    $xml_doc = new domdocument;
+    $xml_doc = new domdocument();
 
     // Alternate field types. Local data (valus) is easiest, but
     // If the field type is a link, go get that data now
@@ -237,18 +230,18 @@ function xsl_formatter_field_formatter_view($entity_type, $entity, $field, $inst
 
       // XML Loaded OK. Now load the stylesheet.
       $xsl_path = $display['settings']['xsl_path'];
-      // Using this method to load an unavailable xsl produces an
-      // uncatchable fatal error(!)
+      // Using loadXML to load an unavailable xsl produces an
+      // uncatchable fatal error(!) Use a more careful wrapper instead.
       $xsl_doc = xsl_formatter_get_xml_doc($xsl_path);
       // Pass through any params that the XSLT may want.
-      $params = (array)json_decode($display['settings']['xsl_params']);
+      $params = (array) json_decode($display['settings']['xsl_params']);
       // 'base' can be used for supporting relative css links.
-      $params['base'] = url(dirname($xsl_doc->documenturi));
+      $params['base'] = url(dirname($xsl_doc->documentURI));
       // Transform!
       $result = xsl_formatter_xmldoc_plus_xsldoc($xml_doc, $xsl_doc, $params);
     }
     catch (Exception $e) {
-      watchdog('xsl_formatter' , "Unable to parse the XML data or transform it. Probably invalid XML.", array('%message' => $e->getMessage()), E_USER_ERROR);
+      watchdog('xsl_formatter', "Unable to parse the XML data or transform it. Probably invalid XML.", array('%message' => $e->getMessage()), E_USER_ERROR);
     }
 
     $element[$delta] = array(
@@ -280,9 +273,9 @@ function xsl_formatter_theme() {
 }
 
 /**
- * Returns HTML from passing the input through the XSL process
+ * Returns HTML from passing the input through the XSL process.
  *
- * @param $variables
+ * @param array $variables
  *   An associative array containing:
  *   - item: An array of field data.
  *   - settings: used to do the transform, including the xsl path
@@ -297,8 +290,9 @@ function theme_xsl_formatter($variables) {
 }
 
 /**
- * Return a list of xsl files, as found in the search locations
- * Over-engineerd for now, anticipating 'module:// as a file scheme
+ * Return a list of xsl files, as found in the search locations.
+ *
+ * Over-engineered for now, anticipating 'module:// as a file scheme
  * and keeping the UI simpler (?)
  */
 function xsl_formatter_enumerate_xsls() {
@@ -312,21 +306,22 @@ function xsl_formatter_enumerate_xsls() {
       $target_path = file_uri_target($base);
       $split_path = explode('/', $target_path);
       $module_name = array_shift($split_path);
-      $base = drupal_get_path('module' , $module_name) .'/'. join('/', $split_path);
+      $base = drupal_get_path('module', $module_name) . '/' . implode('/', $split_path);
     }
 
     $files = file_scan_directory($base, '/.*\.xsl[t]?/');
     foreach ($files as $file) {
-      $found[$file->uri] = $label .'/'. $file->filename;
+      $found[$file->uri] = $label . '/' . $file->filename;
     }
   }
   return $found;
 }
 
-/////////////////////////
+// ///////////////////////
 // XML utilities below.
 // Ultra-paranoid and layered with pessimism.
 // Because XML always goes wrong.
+// ///////////////////////
 
 /**
  * Find and initialize the transformation template.
@@ -340,9 +335,14 @@ function xsl_formatter_enumerate_xsls() {
  * XSL is expensive, so if we find ourselves doing it more than once,
  * the parsed file is retained for next time.
  *
- * Throws an exception if anything goes wrong.
+ * @param $xml_file
  *
- * @return XML Document
+ * @param $description
+ *   Just used for logging.
+ *
+ * @throws E_USER_ERROR If anything goes wrong (file-not-found or invalid XML).
+ *
+ * @return DOMDocument
  */
 function xsl_formatter_get_xml_doc($xml_file, $description = "XML file") {
   // Check cache first-off.
@@ -357,8 +357,8 @@ function xsl_formatter_get_xml_doc($xml_file, $description = "XML file") {
   // Check if and where filepath can be found.
   // Search first under full path, then under files dir, then module dir.
 
-  # TODO - check if this could be used as an attack vector?
-  # Sanitize the fetch path.
+  // TODO - check if this could be used as an attack vector?
+  // Sanitize the fetch path.
 
   $xml_filepath = $xml_file;
   if (!is_file($xml_filepath)) {
@@ -369,9 +369,8 @@ function xsl_formatter_get_xml_doc($xml_file, $description = "XML file") {
   }
 
   if (is_file($xml_filepath)) {
-    #watchdog(__FUNCTION__, "Loading $description from $xml_filepath", array(), WATCHDOG_DEBUG);
-    $xml_doc = new domdocument;
-    if ($xml_doc->load($xml_filepath) ) {
+    $xml_doc = new DOMDocument();
+    if ($xml_doc->load($xml_filepath)) {
       // Loaded OK.
       // .yay.
     }
@@ -387,14 +386,14 @@ function xsl_formatter_get_xml_doc($xml_file, $description = "XML file") {
     throw new Exception("Unable to locate the $description '$xml_file' ", E_USER_ERROR);
   }
 
-  // This is required/helpful to support relative includes
-  $xml_doc->documenturi = $xml_filepath;
+  // This is required/helpful to support relative includes.
+  $xml_doc->documentURI = $xml_filepath;
 
   return $xml_doc;
 }
 
 /**
- * Do the actual conversion between XML+XSL
+ * Do the actual conversion between XML+XSL.
  *
  * Input and output are full DOM objects in PHP5
  * We return the result STRING, as that's what
@@ -403,21 +402,25 @@ function xsl_formatter_get_xml_doc($xml_file, $description = "XML file") {
  *
  * Support for PHP4 XSL removed.
  *
- * @param domdocument or string $xmldoc
+ * @param domdocument $xml_doc
+ *   or a string
  *
- * @param domdocument or string $xsldoc . If it uses includes, the xsl must have
- * had its documenturi set correctly prior to this, but it can be set in the
+ * @param domdocument $xsl_doc
+ *   or string
+ * If it uses includes, the xsl must have
+ * had its documentURI set correctly prior to this, but it can be set in the
  * parameters also.
  *
- * @param array $parameters To be passed into the xslt_process()
+ * @param array $parameters
+ *   To be passed into the xslt_process()
  *
  * @returns string The result.
  */
 function xsl_formatter_xmldoc_plus_xsldoc($xml_doc, $xsl_doc, $parameters = array()) {
-  if (! extension_loaded('xsl')) {
+  if (!extension_loaded('xsl')) {
     return "PHP XSL library is not enabled. Please see <a href='https://drupal.org/project/xsl_formatter'>XSL Formatter</a> or <a href='http://php.net/manual/en/xsl.installation.php'>PHP docs</a>";
   }
-  $xsltproc = new XSLTProcessor;
+  $xsltproc = new XSLTProcessor();
 
   // Attach the xsl rules.
   $xsltproc->importStyleSheet($xsl_doc);
@@ -439,4 +442,3 @@ function xsl_formatter_xmldoc_plus_xsldoc($xml_doc, $xsl_doc, $parameters = arra
 
   return $out;
 }
-
