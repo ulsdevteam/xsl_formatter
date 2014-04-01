@@ -376,14 +376,14 @@ function xsl_formatter_get_xml_doc($xml_file, $description = "XML file") {
     }
     else {
       $xmldocs[$xml_file] = FALSE;
-      throw new Exception("Unable to parse the $description '$xml_filepath' ", E_USER_ERROR);
+      throw new Exception("Unable to parse the $description '$xml_filepath' ");
     }
 
     $xml_docs[$xml_file] = $xml_doc;
   }
   else {
     $xmldocs[$xml_file] = FALSE;
-    throw new Exception("Unable to locate the $description '$xml_file' ", E_USER_ERROR);
+    throw new Exception("Unable to locate the $description '$xml_file' ");
   }
 
   // This is required/helpful to support relative includes.
