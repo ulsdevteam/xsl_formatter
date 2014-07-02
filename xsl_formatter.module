@@ -48,7 +48,7 @@
 /**
  * Implements hook_field_formatter_info().
  *
- * Declares the existance of this formatter.
+ * Declares the existence of this formatter.
  * We can do similar things to local textareas, remote URLs, or uploaded files!
  */
 function xsl_formatter_field_formatter_info() {
@@ -57,7 +57,7 @@ function xsl_formatter_field_formatter_info() {
       'label' => t('Transformed by XSL'),
       'field types' => array('text_long', 'link_field', 'file'),
       'settings' => array(
-        'xsl_path' => 'xsl/xmlverbatim.xsl',
+        'xsl_path' => drupal_get_path('module', 'xsl_formatter') . '/xsl/xmlverbatim.xsl',
         'xsl_params' => '',
         'debug' => FALSE,
       ),
