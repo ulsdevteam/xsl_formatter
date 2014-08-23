@@ -106,12 +106,16 @@ function xsl_formatter_field_formatter_settings_form($field, $instance, $view_mo
     '#name' => $upload_field_id,
   );
   $module_path = drupal_get_path('module', 'xsl_formatter');
+  $eg_json = "{
+  \"indent-elements\":true,
+  \"css-stylesheet\":\"sites/all/modules/xsl_formatter/xsl/xmlverbatim.css\"
+  }";
   $element['xsl_params'] = array(
     '#title' => t('Additional params'),
     '#type' => 'textarea',
     '#rows' => 2,
     '#cols' => 24,
-    '#description' => t('Additional parameters that the Transformation stylesheet may expect. Use JSON format, eg <pre>{\"indent-elements\":true, \"css-stylesheet\":\"!module_path/xsl/xmlverbatim.css\"}</pre>', array('!module_path' => $module_path)),
+    '#description' => t('Additional parameters that the Transformation stylesheet may expect. Use JSON format, eg <pre>!eg_json</pre>', array('!module_path' => $module_path, '!eg_json' => $eg_json)),
     '#default_value' => $settings['xsl_params'],
     '#element_validate' => array('xsl_formatter_xsl_params_validate'),
   );
