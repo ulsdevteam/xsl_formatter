@@ -134,6 +134,7 @@ function xsl_formatter_field_formatter_settings_form($field, $instance, $view_mo
 function xsl_formatter_xsl_path_validate($element, &$form_state, $form) {
   try {
     $xsl_doc = xsl_formatter_get_xml_doc($element['#value']);
+    unset($xsl_doc);
   }
   catch (Exception $e) {
     $element_id = implode('][', $element['#parents']);
@@ -339,14 +340,16 @@ function xsl_formatter_enumerate_xsls() {
  * XSL is expensive, so if we find ourselves doing it more than once,
  * the parsed file is retained for next time.
  *
- * @param $xml_file
- *
- * @param $description
+ * @param string $xml_file
+ *   Path to the XML source file, local absolute path or file wrapper URI.
+ * @param string $description
  *   Just used for logging.
  *
- * @throws E_USER_ERROR If anything goes wrong (file-not-found or invalid XML).
+ * @throws \Exception
+ *   If anything goes wrong (file-not-found or invalid XML).
  *
  * @return DOMDocument
+ *   Parsed Dom Object to work on.
  */
 function xsl_formatter_get_xml_doc($xml_file, $description = "XML file") {
   // Check cache first-off.
