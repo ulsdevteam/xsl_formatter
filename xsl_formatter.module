@@ -164,7 +164,8 @@ function xsl_formatter_xsl_params_validate($element, &$form_state, $form) {
 function xsl_formatter_xsl_upload_validate($element, &$form_state, $form) {
   // Check for a new uploaded xsl.
   // Figure out what the big ID was. This is wierd.
-  $upload_field_id = 'files-' . substr($element['#id'], strlen('edit-'));
+  $upload_field_id = 'files_'.implode('_', $element['#parents']);
+  $upload_field_id = str_replace('_', '-', $upload_field_id);
 
   // Get it. Temporary at first.
   $validators = array('file_validate_extensions' => array('xsl', 'xslt'));
