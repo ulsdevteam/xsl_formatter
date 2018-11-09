@@ -1,4 +1,4 @@
 name = XSL formatter
-description = Renders the content of a text field by passing it through an XSL tranformation first.
+description = Renders the content of a text field by passing it through an XSL transformation first.
 core = 7.x
-package = coders.co.nz
+package = Fields
