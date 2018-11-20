@@ -261,29 +261,20 @@ function xsl_formatter_field_formatter_view($entity_type, $entity, $field, $inst
 }
 
 /**
- * Check whether the file existed in public://xml/cache folder
- * If existed, return content from local file;
- * otherwise, download the file from URL
- *
+ * Using cache_set and cache_get to implement cache mechanism 
+ * The cache file will expired after 1 day.
+ * 
  * @param string $url
- *
- *@return string $content The content may retrieve via URL or load from a cache file
  */
 function xsl_retrieve_content($url) {
-    $save_path = 'public://xsl/';
-    $filepath = $save_path.'cache/';
-    if (!is_dir($filepath)) {
-        mkdir($filepath, 0775);
-    }
-    $filename = explode('/', $url);
-    $filename = $filepath.str_replace(str_split('\\/:*?"<>|=.&'), '', end($filename)).'.xml';
-    if (file_exists($filename)) {
-        return file_get_contents($filename);
+    $cid = 'xsl_'.md5($url.time());
+    if ($cache = cache_get($cid)) {
+        $content = $cache;
     } else {
         $content = file_get_contents($url);
-        file_put_contents($filename, $content);
-        return $content;
+        cache_set($cid, $content, 'cache', time() + (24 * 60 * 60));
     }
+    return $content;
 }
 
 /**
