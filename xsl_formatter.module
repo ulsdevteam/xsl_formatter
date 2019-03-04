@@ -261,18 +261,18 @@ function xsl_formatter_field_formatter_view($entity_type, $entity, $field, $inst
 }
 
 /**
- * Using cache_set and cache_get to implement cache mechanism 
- * The cache file will expired after 1 day.
- * 
+ * Using cache_set and cache_get to implement cache mechanism
+ * cache_get($cid, $data, $table = 'cache', $expire = CACHE_PERMANENT, $headers = NULL)
  * @param string $url
  */
 function xsl_retrieve_content($url) {
-    $cid = 'xsl_'.md5($url.time());
+    $algo = "ripemd160";
+    $cid = 'xsl_'.hash($algo, $url);
     if ($cache = cache_get($cid)) {
         $content = $cache;
     } else {
         $content = file_get_contents($url);
-        cache_set($cid, $content, 'cache', time() + (24 * 60 * 60));
+        cache_set($cid, $content, 'cache', 'CACHE_TEMPORARY');
     }
     return $content;
 }
