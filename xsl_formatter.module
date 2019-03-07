@@ -272,7 +272,7 @@ function xsl_retrieve_content($url) {
         $content = $cache;
     } else {
         $content = file_get_contents($url);
-        cache_set($cid, $content, 'cache', 'CACHE_TEMPORARY');
+        cache_set($cid, $content, 'cache', CACHE_TEMPORARY);
     }
     return $content;
 }
